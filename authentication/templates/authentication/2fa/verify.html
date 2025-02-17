@@ -1,0 +1,11 @@
+<form method="post">
+    {% csrf_token %}
+    <input type="text" name="code" placeholder="Enter verification code">
+    <label>
+        <input type="checkbox" name="trust_device"> Trust this device for 30 days
+    </label>
+    <button type="submit">Verify</button>
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+</form>

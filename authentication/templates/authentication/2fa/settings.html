@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="max-w-4xl mx-auto mt-8 p-6 bg-white rounded-lg shadow-md">
+
+    <h1 class="text-3xl font-bold mb-8">Two-Factor Authentication Settings</h1>
+
+    {% if messages %}
+    <div class="mb-6">
+        {% for message in messages %}
+            <div class="p-4 mb-4 rounded {% if message.tags == 'success' %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
+
+                {{ message }}
+            </div>
+        {% endfor %}
+    </div>
+
+    {% endif %}
+
+    <!-- TOTP Section -->
+
+    <section class="mb-8 p-6 border rounded-lg">
+
+        <h2 class="text-xl font-semibold mb-4">Authenticator App (TOTP)</h2>
+
+        {% if two_factor.totp_verified %}
+
+            <div class="mb-4">
+
+                <p class="text-green-600">✓ TOTP is enabled and verified</p>
+
+                <form method="post" class="mt-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="disable_totp">
+
+                    <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                        Disable TOTP
+                    </button>
+                </form>
+
+            </div>
+
+        {% else %}
+
+            <div class="mb-4">
+
+                <p class="mb-4">Set up an authenticator app:</p>
+
+                {% if qr_code %}
+
+                    <img src="{{ qr_code }}" alt="TOTP QR Code" class="mb-4">
+
+                    <p class="text-sm text-gray-600 mb-2">Can't scan? Use this code:</p>
+
+                    <code class="block bg-gray-100 p-2 rounded mb-4">{{ two_factor.secret_key }}</code>
+
+                    <form method="post" class="space-y-4">
+
+                        {% csrf_token %}
+
+                        <input type="hidden" name="action" value="verify_totp">
+
+                        <input type="text"
+
+                               name="code"
+
+                               class="w-full p-2 border rounded"
+
+                               placeholder="Enter verification code"
+
+                               required>
+
+                        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                            Verify and Enable
+                        </button>
+                    </form>
+
+                {% endif %}
+            </div>
+        {% endif %}
+    </section>
+
+    <!-- Preferred Method Section -->
+
+    <section class="mb-8 p-6 border rounded-lg">
+
+        <h2 class="text-xl font-semibold mb-4">Preferred Verification Method</h2>
+
+        <form method="post" class="space-y-4">
+
+            {% csrf_token %}
+
+            <input type="hidden" name="action" value="update_preferred_method">
+            <div class="space-y-2">
+
+                <label class="flex items-center">
+
+                    <input type="radio"
+
+                           name="preferred_method"
+
+                           value="email"
+
+                           {% if two_factor.preferred_method == 'email' %}checked{% endif %}
+
+                           class="mr-2">
+                    Email ({{ request.user.email }})
+                </label>
+
+                <label class="flex items-center">
+
+                    <input type="radio"
+
+                           name="preferred_method"
+
+                           value="sms"
+
+                           {% if two_factor.preferred_method == 'sms' %}checked{% endif %}
+
+                           class="mr-2">
+                    SMS
+                </label>
+                <label class="flex items-center">
+
+                    <input type="radio"
+
+                           name="preferred_method"
+
+                           value="call"
+
+                           {% if two_factor.preferred_method == 'call' %}checked{% endif %}
+
+                           class="mr-2">
+
+                    Phone Call
+
+                </label>
+
+            </div>
+            <div class="mt-4" id="phoneNumberSection">
+
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+
+                    Phone Number (for SMS/Call)
+
+                </label>
+
+                <input type="tel"
+
+                       name="phone_number"
+
+                       value="{{ phone_number }}"
+
+                       class="w-full p-2 border rounded"
+
+                       placeholder="+1234567890">
+
+            </div>
+
+            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+
+                Update Preferred Method
+
+            </button>
+
+        </form>
+
+    </section>
+
+    <!-- Backup Codes Section -->
+
+    <section class="mb-8 p-6 border rounded-lg">
+
+        <h2 class="text-xl font-semibold mb-4">Backup Codes</h2>
+
+        <div class="mb-4">
+
+            {% if has_backup_codes %}
+
+                <p class="mb-4">You have backup codes generated. Keep them safe!</p>
+
+            {% else %}
+
+                <p class="mb-4">No backup codes generated yet.</p>
+
+            {% endif %}
+
+            <form method="post">
+
+                {% csrf_token %}
+
+                <input type="hidden" name="action" value="generate_backup_codes">
+
+                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+
+                    Generate New Backup Codes
+
+                </button>
+
+            </form>
+
+        </div>
+
+    </section>
+
+    <!-- Trusted Devices Section -->
+
+    <section class="p-6 border rounded-lg">
+
+        <h2 class="text-xl font-semibold mb-4">Trusted Devices</h2>
+
+        {% if trusted_devices %}
+
+            <div class="mb-4">
+
+                <table class="w-full">
+
+                    <thead>
+
+                        <tr>
+
+                            <th class="text-left py-2">Device</th>
+
+                            <th class="text-left py-2">Last Used</th>
+
+                            <th class="text-left py-2">Actions</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        {% for device in trusted_devices %}
+
+                            <tr>
+
+                                <td class="py-2">{{ device.device_name }}</td>
+
+                                <td class="py-2">{{ device.last_used }}</td>
+
+                                <td class="py-2">
+
+                                    <form method="post" class="inline">
+
+                                        {% csrf_token %}
+
+                                        <input type="hidden" name="action" value="revoke_device">
+
+                                        <input type="hidden" name="device_id" value="{{ device.device_id }}">
+
+                                        <button type="submit" class="text-red-500 hover:text-red-700">
+
+                                            Revoke
+
+                                        </button>
+
+                                    </form>
+
+                                </td>
+
+                            </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+                <form method="post" class="mt-4">
+
+                    {% csrf_token %}
+
+                    <input type="hidden" name="action" value="revoke_all_devices">
+
+                    <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                        Revoke All Devices
+                    </button>
+                </form>
+            </div>
+        {% else %}
+            <p>No trusted devices.</p>
+        {% endif %}
+    </section>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const phoneSection = document.getElementById('phoneNumberSection');
+    const methodInputs = document.querySelectorAll('input[name="preferred_method"]');
+    function updatePhoneVisibility() {
+        const selectedMethod = document.querySelector('input[name="preferred_method"]:checked').value;
+        phoneSection.style.display = (selectedMethod === 'sms' || selectedMethod === 'call') ? 'block' : 'none';
+
+    }
+
+    methodInputs.forEach(input => {
+        input.addEventListener('change', updatePhoneVisibility);
+    });
+    updatePhoneVisibility();
+});
+</script>
+{% endblock %}

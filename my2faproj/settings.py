@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'test_app',  
+    'authentication',  
     # 2FA Libraries   
     'django_otp',
     'django_otp.plugins.otp_totp',

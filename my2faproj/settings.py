@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/3.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-noj0=kthcgy)shxkkg@#00%mr^dp41559s%)y_tixij5_&o0^p'
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -52,16 +54,22 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    "authentication.middlewares.TwoFactorAuthMiddleware",
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_otp.middleware.OTPMiddleware',  # Add this middleware
 ]
 
-ROOT_URLCONF = 'my2faproj.urls'
+# ROOT_URLCONF = 'my2faproj.urls'
 
-TWO_FACTOR_FORCE_OTP_ADMIN = True
+# TWO_FACTOR_FORCE_OTP_ADMIN = True
 
-LOGIN_URL = 'two_factor:login'
+# LOGIN_URL = 'two_factor:login'
+
+LOGIN_URL = "/admin/"
+LOGIN_REDIRECT_URL = "/2fa/verify/"
+LOGOUT_URL = "/admin/"
+LOGOUT_REDIRECT_URL = "/admin/"
 
 
 TEMPLATES = [
@@ -131,8 +139,34 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/3.2/howto/static-files/
 
 STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, "static")
+STATICFILES_DIRS = [
+        os.path.join(BASE_DIR, "staticfiles"),
+    ]
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Redis config esp for 2FA
+REDIS_HOST = config("REDIS_HOST", default="localhost")
+REDIS_PORT = config("REDIS_PORT", default="6379")
+REDIS_DB = 0
+
+
+# Email Settings
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
+)
+EMAIL_HOST = config("EMAIL_HOST", default="localhost")
+EMAIL_PORT = config("EMAIL_PORT", default=1025, cast=int)
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", default=False, cast=bool)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="no-reply@drohealth.com")
+
+# Twilio
+TWILIO_PHONE_NUMBER = config("TWILIO_PHONE_NUMBER", None)

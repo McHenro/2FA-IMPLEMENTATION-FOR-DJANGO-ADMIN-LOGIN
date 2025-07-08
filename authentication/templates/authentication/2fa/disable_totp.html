@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-md mx-auto mt-8 p-6 bg-white rounded-lg shadow-md">
+    <h2 class="text-2xl font-bold mb-6">Disable Two-Factor Authentication</h2>
+
+    <div class="mb-6">
+        <p class="mb-4 text-red-600">
+            Warning: Disabling 2FA will make your account less secure.
+        </p>
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="text"
+                   name="code"
+                   class="w-full p-2 border rounded"
+                   placeholder="Enter current TOTP code to confirm"
+                   required>
+
+            {% if error %}
+                <p class="text-red-500">{{ error }}</p>
+            {% endif %}
+
+            <button type="submit"
+                    class="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600">
+                Disable TOTP
+            </button>
+        </form>
+    </div>
+
+    <a href="{% url 'setup_totp' %}"
+       class="block mt-4 text-center text-gray-600 hover:text-gray-800">
+        Cancel
+    </a>
+</div>
+{% endblock %}

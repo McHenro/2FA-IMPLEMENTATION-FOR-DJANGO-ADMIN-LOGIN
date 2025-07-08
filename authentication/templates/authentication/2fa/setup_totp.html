@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-md mx-auto mt-8 p-6 bg-white rounded-lg shadow-md">
+    <h2 class="text-2xl font-bold mb-6">Set Up Two-Factor Authentication</h2>
+
+    {% if show_qr %}
+        <div class="mb-6">
+            <p class="mb-4">1. Scan this QR code with your authenticator app:</p>
+            <img src="{{ qr_code }}" alt="TOTP QR Code" class="mx-auto mb-4">
+
+            <div class="mb-4">
+                <p class="text-sm text-gray-600">Can't scan the QR code?</p>
+                <p class="text-sm font-mono break-all bg-gray-100 p-2 rounded">
+                    {{ secret_key }}
+                </p>
+            </div>
+        </div>
+
+        <div class="mb-6">
+            <p class="mb-4">2. Enter the verification code from your app:</p>
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                <input type="text"
+                       name="code"
+                       class="w-full p-2 border rounded"
+                       placeholder="Enter 6-digit code"
+                       required>
+
+                {% if error %}
+                    <p class="text-red-500">{{ error }}</p>
+                {% endif %}
+
+                <button type="submit"
+                        class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+                    Verify and Enable TOTP
+                </button>
+            </form>
+        </div>
+    {% else %}
+        <p class="text-green-600">
+            TOTP is already set up and verified for your account.
+        </p>
+        <a href="{% url 'authentication:disable_totp' %}"
+           class="block mt-4 text-center text-red-500 hover:text-red-600">
+            Disable TOTP
+        </a>
+    {% endif %}
+</div>
+{% endblock %}

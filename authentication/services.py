@@ -6,6 +6,8 @@ from urllib.parse import quote
 
 import pyotp
 import qrcode
+from django.core.mail import send_mail
+from django.conf import settings
 
 from .redis_manager import RedisManager
 
@@ -46,10 +48,17 @@ class TwoFactorService:
         # Store the code in Redis
         self.redis.store_code(user.id, code, method)
 
-        # Simulate sending the code (in a real app, you would send via email/SMS)
+        # Send the code via the specified method
         if method == "email":
             print(f"Sending code {code} to {user.email}")
-            # In a real app: send_email(user.email, f"Your verification code is: {code}")
+            # Actually send the email
+            send_mail(
+                subject="Your Verification Code",
+                message=f"Your verification code is: {code}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
             message = f"Code sent to {user.email}"
         elif method == "sms":
             print(f"Sending code {code} to {user.twofactorauth.phone_number}")

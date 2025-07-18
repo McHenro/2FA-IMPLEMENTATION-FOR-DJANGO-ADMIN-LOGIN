@@ -14,7 +14,7 @@ class RedisManager:
             decode_responses=True,
         )
         self.code_expiry = 600  # 10 minutes in seconds
-        self.rate_limit_expiry = 3600  # 1 hour in seconds
+        self.rate_limit_expiry = 1800  # 30 minutes in seconds
         self.max_attempts = 5
 
     def store_code(self, user_id, code, method):
@@ -39,14 +39,18 @@ class RedisManager:
 
         self.redis.setex(key, self.code_expiry, json.dumps(data))
 
-        return data["code"] == entered_code, None
+        # Strip whitespace from both codes for comparison
+        stored_code = data["code"].strip() if data["code"] else ""
+        entered_code = entered_code.strip() if entered_code else ""
+
+        return stored_code == entered_code, None
 
     def check_rate_limit(self, user_id):
         """Check if user has exceeded rate limit for code generation"""
         key = f"2fa:ratelimit:{user_id}"
         attempts = self.redis.get(key)
 
-        if attempts and int(attempts) >= 3:  # Max 3 codes per hour
+        if attempts and attempts.strip() and int(attempts) >= 5:  # Max 5 codes per hour
             return False
 
         self.redis.incr(key)

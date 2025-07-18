@@ -72,6 +72,8 @@ def send_2fa(request):
 
     if success:
         messages.success(request, result)
+        # Store the code request timestamp in the session
+        request.session["last_code_request"] = time.time()
     else:
         messages.error(request, result)
 
@@ -100,7 +102,11 @@ def verify_2fa(request):
     two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
 
     # If this is a new user without 2FA setup, send a code automatically
-    if created or (not two_factor.totp_enabled and not two_factor.backup_codes):
+    # But only if a code wasn't recently sent (to prevent duplicate emails)
+    last_code_request = request.session.get("last_code_request")
+    recently_sent = last_code_request and (time.time() - last_code_request) < 60  # Within last minute
+
+    if (created or (not two_factor.totp_enabled and not two_factor.backup_codes)) and not recently_sent:
         try:
             # Generate and send code using preferred method
             success, message = two_factor_service.generate_and_send_code(
@@ -108,6 +114,8 @@ def verify_2fa(request):
             )
             if success:
                 messages.success(request, message)
+                # Store the code request timestamp in the session
+                request.session["last_code_request"] = time.time()
             else:
                 messages.error(request, message)
         except Exception as e:

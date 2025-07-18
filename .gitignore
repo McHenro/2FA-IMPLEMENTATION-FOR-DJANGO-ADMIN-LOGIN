@@ -5,6 +5,7 @@ __pycache__/
 # Ignore environment files
 .env
 venv/
+factor/
 *.sqlite3
 
 # Ignore Django-specific files

@@ -22,18 +22,18 @@ two_factor_service = TwoFactorService()
 
 @login_required
 def totp_success(request):
-    return render(request, "2fa/totp_success.html")
+    return render(request, "authentication/2fa/totp_success.html")
 
 
 @login_required
 def totp_disabled(request):
-    return render(request, "2fa/totp_disabled.html")
+    return render(request, "authentication/2fa/totp_disabled.html")
 
 
 @login_required
 def backup_codes(request):
     codes = request.user.twofactorauth.backup_codes
-    return render(request, "2fa/backup_codes.html", {"codes": codes})
+    return render(request, "authentication/2fa/backup_codes.html", {"codes": codes})
 
 
 @login_required
@@ -52,22 +52,39 @@ def home(request):
         or two_factor.preferred_method in ["sms", "email", "call"],
     }
 
-    return render(request, "2fa/home.html", context)
+    return render(request, "authentication/2fa/home.html", context)
 
 
 @login_required
-@require_http_methods(["POST", "GET"])
+@require_http_methods(["POST"])
 def send_2fa(request):
-    method = request.POST.get("method", request.user.twofactorauth.preferred_method)
-    success, code = two_factor_service.generate_and_send_code(request.user, method)
+    if not request.user.is_authenticated:
+        return redirect("admin:login")
 
-    if not success:
-        return render(request, "2fa/verify.html", {"error": code})
+    # Get or create TwoFactorAuth record
+    two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
+
+    # Use preferred method if not specified
+    method = request.POST.get("method", two_factor.preferred_method)
+
+    # Generate and send code
+    success, result = two_factor_service.generate_and_send_code(request.user, method)
+
+    if success:
+        messages.success(request, result)
+    else:
+        messages.error(request, result)
+
     return redirect("authentication:verify_2fa")
 
 
 @login_required
 def verify_2fa(request):
+    # Check if already verified in this session
+    if request.session.get("is_2fa_verified"):
+        return redirect(request.session.get("next", "admin:index"))
+
+    # Check for trusted device
     device_id = request.COOKIES.get("device_id")
     if (
         device_id
@@ -75,35 +92,75 @@ def verify_2fa(request):
             user=request.user, device_id=device_id, is_active=True
         ).exists()
     ):
+        # Mark as verified in the session
+        request.session["is_2fa_verified"] = True
         return redirect(request.session.get("next", "admin:index"))
+
+    # Get or create TwoFactorAuth record
+    two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
+
+    # If this is a new user without 2FA setup, send a code automatically
+    if created or (not two_factor.totp_enabled and not two_factor.backup_codes):
+        try:
+            # Generate and send code using preferred method
+            success, message = two_factor_service.generate_and_send_code(
+                request.user, two_factor.preferred_method
+            )
+            if success:
+                messages.success(request, message)
+            else:
+                messages.error(request, message)
+        except Exception as e:
+            messages.error(request, f"Error sending verification code: {str(e)}")
+
+    # Handle form submission
     if request.method == "POST":
         code = request.POST.get("code")
         trust_device = request.POST.get("trust_device") == "on"
 
-        two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
+        if not code:
+            return render(
+                request, "authentication/2fa/verify.html", {
+                    "error": "Please enter a verification code",
+                    "totp_enabled": two_factor.totp_enabled and two_factor.totp_verified,
+                    "has_backup_codes": bool(two_factor.backup_codes)
+                }
+            )
 
-        # Check if it's a backup code
-        if code in two_factor.backup_codes:
+        success = False
+        error = None
+
+        # Check verification methods in order
+
+        # 1. Check if it's a backup code
+        if two_factor.backup_codes and code in two_factor.backup_codes:
             two_factor.backup_codes.remove(code)
             two_factor.save()
-            success, error = True, None
-        else:
-            # Check if it's a TOTP code from an authenticator app
-            totp = pyotp.TOTP(request.user.twofactorauth.secret_key)
+            success = True
+
+        # 2. Check if it's a TOTP code (only if TOTP is enabled)
+        elif two_factor.totp_enabled and two_factor.totp_verified:
+            totp = pyotp.TOTP(two_factor.secret_key)
             if totp.verify(code):
-                success, error = True, None
-            else:
-                success, error = two_factor_service.redis.verify_code(
-                    request.user.id, code
-                )
+                success = True
+
+        # 3. Check if it's a code from Redis (email, SMS, etc.)
+        else:
+            success, error = two_factor_service.redis.verify_code(
+                request.user.id, code
+            )
 
         if success:
+            # Mark as verified in both session and database
             request.session["is_2fa_verified"] = True
-            request.user.twofactorauth.verified = True
-            request.user.twofactorauth.save()
+            two_factor.verified = True
+            two_factor.save()
 
-            response = redirect(request.session.get("next", "admin:index"))
+            # Redirect to the original URL or admin index
+            next_url = request.session.get("next", "admin:index")
+            response = redirect(next_url)
 
+            # Handle trusted device
             if trust_device:
                 device_id = request.COOKIES.get("device_id")
                 if not device_id:
@@ -113,22 +170,35 @@ def verify_2fa(request):
                         device_id,
                         max_age=30 * 24 * 60 * 60,  # 30 days
                         httponly=True,
-                        secure=True,
+                        secure=request.is_secure(),
                         samesite="Lax",
                     )
-                TrustedDevice.objects.create(
+
+                # Create or update trusted device
+                TrustedDevice.objects.update_or_create(
                     user=request.user,
                     device_id=device_id,
-                    device_name=request.META.get("HTTP_USER_AGENT", "Unknown Device"),
+                    defaults={
+                        "device_name": request.META.get("HTTP_USER_AGENT", "Unknown Device"),
+                        "is_active": True
+                    }
                 )
 
             return response
         else:
             return render(
-                request, "2fa/verify.html", {"error": error or "Invalid code"}
+                request, "authentication/2fa/verify.html", {
+                    "error": error or "Invalid code",
+                    "totp_enabled": two_factor.totp_enabled and two_factor.totp_verified,
+                    "has_backup_codes": bool(two_factor.backup_codes)
+                }
             )
 
-    return render(request, "2fa/verify.html")
+    # Render the verification form
+    return render(request, "authentication/2fa/verify.html", {
+        "totp_enabled": two_factor.totp_enabled and two_factor.totp_verified,
+        "has_backup_codes": bool(two_factor.backup_codes)
+    })
 
 
 @login_required
@@ -137,9 +207,9 @@ def generate_backup_codes(request):
         codes = two_factor_service.generate_backup_codes()
         request.user.twofactorauth.backup_codes = codes
         request.user.twofactorauth.save()
-        return render(request, "2fa/backup_codes.html", {"codes": codes})
+        return render(request, "authentication/2fa/backup_codes.html", {"codes": codes})
 
-    return render(request, "2fa/backup_codes.html")
+    return render(request, "authentication/2fa/backup_codes.html")
 
 
 @login_required
@@ -157,7 +227,7 @@ def setup_totp(request):
         else:
             return render(
                 request,
-                "2fa/setup_totp.html",
+                "authentication/2fa/setup_totp.html",
                 {"error": "Invalid code", "show_qr": True},
             )
 
@@ -166,7 +236,7 @@ def setup_totp(request):
 
     return render(
         request,
-        "2fa/setup_totp.html",
+        "authentication/2fa/setup_totp.html",
         {
             "qr_code": qr_code,
             "secret_key": two_factor.secret_key,
@@ -189,7 +259,7 @@ def disable_totp(request):
             two_factor.save()
             return redirect("authentication:totp_disabled")
 
-    return render(request, "2fa/disable_totp.html")
+    return render(request, "authentication/2fa/disable_totp.html")
 
 
 @login_required
@@ -238,7 +308,7 @@ def manage_2fa_settings(request):
             two_factor.backup_codes = codes
             two_factor.save()
             messages.success(request, "New backup codes generated")
-            return render(request, "2fa/backup_codes.html", {"codes": codes})
+            return render(request, "authentication/2fa/backup_codes.html", {"codes": codes})
 
         return redirect("authentication:manage_2fa_settings")
 
@@ -256,30 +326,79 @@ def manage_2fa_settings(request):
         "phone_number": two_factor.phone_number,
     }
 
-    return render(request, "2fa/settings.html", context)
+    return render(request, "authentication/2fa/settings.html", context)
 
 
 @csrf_exempt
 @csrf_protect
 def request_code(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"success": False, "error": "Authentication required"})
+
     if request.method == "POST":
-        data = json.loads(request.body)
-        method = data.get("method")
-        user = request.user
+        try:
+            # Handle both JSON and form data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+                method = data.get("method")
+            else:
+                method = request.POST.get("method")
 
-        success, result = two_factor_service.generate_and_send_code(user, method)
-        if success:
-            # Store the code and timestamp in the session
-            request.session["last_code_request"] = time.time()
-            return JsonResponse({"success": True})
-        else:
-            return JsonResponse({"success": False, "error": result})
+            # Default to user's preferred method if not specified
+            if not method:
+                two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
+                method = two_factor.preferred_method
 
-    return JsonResponse({"success": False, "error": "Invalid request method"})
+            success, result = two_factor_service.generate_and_send_code(request.user, method)
+
+            if success:
+                # Store the code request timestamp in the session
+                request.session["last_code_request"] = time.time()
+
+                if request.content_type == 'application/json':
+                    return JsonResponse({"success": True, "message": result})
+                else:
+                    messages.success(request, result)
+                    return redirect("authentication:verify_2fa")
+            else:
+                if request.content_type == 'application/json':
+                    return JsonResponse({"success": False, "error": result})
+                else:
+                    messages.error(request, result)
+                    return redirect("authentication:verify_2fa")
+
+        except Exception as e:
+            error_message = f"Error requesting code: {str(e)}"
+            if request.content_type == 'application/json':
+                return JsonResponse({"success": False, "error": error_message})
+            else:
+                messages.error(request, error_message)
+                return redirect("authentication:verify_2fa")
+
+    # GET request - show form to request a code
+    two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
+    return render(request, "authentication/2fa/request_code.html", {
+        "preferred_method": two_factor.preferred_method,
+        "phone_number": two_factor.phone_number
+    })
 
 
 def custom_logout(request):
+    # Reset 2FA verification status if the user has a TwoFactorAuth record
+    if request.user.is_authenticated:
+        try:
+            two_factor = request.user.twofactorauth
+            two_factor.verified = False
+            two_factor.save()
+        except:
+            pass
+
+    # Clear session and cookies
     response = redirect("admin:login")
     response.delete_cookie("sessionid")
+    if 'is_2fa_verified' in request.session:
+        del request.session['is_2fa_verified']
+
+    # Logout the user
     logout(request)
     return response

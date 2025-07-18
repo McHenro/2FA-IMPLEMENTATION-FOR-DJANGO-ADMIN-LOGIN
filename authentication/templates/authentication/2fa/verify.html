@@ -1,11 +1,81 @@
-<form method="post">
-    {% csrf_token %}
-    <input type="text" name="code" placeholder="Enter verification code">
-    <label>
-        <input type="checkbox" name="trust_device"> Trust this device for 30 days
-    </label>
-    <button type="submit">Verify</button>
-    {% if error %}
-        <p class="error">{{ error }}</p>
+{% extends "authentication/base.html" %}
+
+{% block title %}Two-Factor Authentication Verification{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
+    <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Verify Your Identity</h2>
+
+    {% if totp_enabled %}
+    <div class="mb-4">
+        <p class="text-gray-600">Enter the code from your authenticator app.</p>
+        {% if has_backup_codes %}
+        <p class="text-sm text-gray-500 mt-1">You can also use one of your backup codes.</p>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="mb-4 text-gray-600">Please enter the verification code sent to your device.</p>
     {% endif %}
-</form>
+
+    <form method="post" class="space-y-4">
+        {% csrf_token %}
+        <div>
+            <label for="code" class="block text-sm font-medium text-gray-700">Verification Code</label>
+            <input type="text" name="code" id="code" placeholder="Enter verification code" 
+                   class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                   autocomplete="off" autofocus>
+        </div>
+
+        <div class="flex items-center">
+            <input type="checkbox" name="trust_device" id="trust_device" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+            <label for="trust_device" class="ml-2 block text-sm text-gray-700">Trust this device for 30 days</label>
+        </div>
+
+        {% if error %}
+            <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-red-700">{{ error }}</p>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        <div>
+            <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Verify
+            </button>
+        </div>
+    </form>
+
+    {% if not totp_enabled %}
+    <div class="mt-6 text-center">
+        <p class="text-sm text-gray-600">Didn't receive a code?</p>
+        <div class="mt-2 flex justify-center space-x-4">
+            <form action="{% url 'authentication:send_2fa' %}" method="post" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                    Send a new code
+                </button>
+            </form>
+            <span class="text-gray-400">|</span>
+            <a href="{% url 'authentication:request_code' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                Choose verification method
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mt-6 text-center border-t pt-4">
+        <p class="text-sm text-gray-600">Need to set up 2FA?</p>
+        <a href="{% url 'authentication:manage_2fa_settings' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            Manage 2FA Settings
+        </a>
+    </div>
+</div>
+{% endblock %}

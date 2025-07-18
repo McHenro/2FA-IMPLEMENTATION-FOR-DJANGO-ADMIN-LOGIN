@@ -3,9 +3,41 @@ import random
 import string
 import uuid
 import pyotp
-from django.contrib.auth.models import AbstractUser, UserManager, Group, Permission
+from django.contrib.auth.models import AbstractUser, UserManager, Group, Permission, BaseUserManager
 from django.utils.translation import gettext as _
 
+
+class CustomUserManager(BaseUserManager):
+    """
+    Custom user manager that doesn't require a username for creating a superuser.
+    """
+    def create_superuser(self, email, password, **extra_fields):
+        """
+        Create and save a SuperUser with the given email and password.
+        """
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+
+        return self.create_user(email, password, **extra_fields)
+
+    def create_user(self, email, password, **extra_fields):
+        """
+        Create and save a User with the given email and password.
+        """
+        if not email:
+            raise ValueError('The Email must be set')
+
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save()
+        return user
 
 
 class LowercaseEmailField(models.EmailField):
@@ -49,8 +81,8 @@ class User(AbstractUser):
         related_name="custom_user_permissions",  # Avoid clash with auth.User
         blank=True
     )
-   
-    objects = UserManager()
+
+    objects = CustomUserManager()
 
     USERNAME_FIELD = "email"
     EMAIL_FIELD = "email"

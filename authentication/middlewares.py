@@ -8,38 +8,59 @@ class TwoFactorAuthMiddleware:
 
     def __call__(self, request):
         exempt_paths = [
-            # reverse('login/'),
             reverse("authentication:verify_2fa"),
             reverse("authentication:send_2fa"),
+            reverse("authentication:setup_totp"),
+            reverse("authentication:disable_totp"),
+            reverse("authentication:manage_2fa_settings"),
+            reverse("authentication:totp_success"),
+            reverse("authentication:totp_disabled"),
+            reverse("authentication:request_code"),
+            reverse("authentication:logout"),
             "/static/",
             "/admin/login/",
+            "/admin/logout/",
         ]
 
-        if request.path.startswith("/admin/") and not any(
-            request.path.startswith(path) for path in exempt_paths
-        ):
+        # Check if the path is exempt from 2FA
+        is_exempt = any(request.path.startswith(path) for path in exempt_paths)
+
+        # Only apply 2FA middleware for admin paths that are not exempt
+        if request.path.startswith("/admin/") and not is_exempt:
+            # If user is not authenticated, redirect to login
             if not request.user.is_authenticated:
-                return redirect("/admin/login/")
+                return redirect(reverse("admin:login"))
 
             try:
-                two_factor = request.user.twofactorauth
+                # Check if 2FA is already verified in this session
+                if request.session.get('is_2fa_verified'):
+                    return self.get_response(request)
+
+                # Get or create TwoFactorAuth record
+                from authentication.models import TwoFactorAuth
+                two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
 
                 # Check for trusted device
-                device_id = request.COOKIES.get("trusted_device")
+                device_id = request.COOKIES.get("device_id")
                 if device_id:
                     trusted_device = TrustedDevice.objects.filter(
                         user=request.user, device_id=device_id, is_active=True
                     ).first()
                     if trusted_device:
                         trusted_device.save()  # Update last_used
+                        # Mark as verified in the session
+                        request.session['is_2fa_verified'] = True
                         return self.get_response(request)
 
-                if not two_factor.verified:
-                    return redirect("authentication:verify_2fa")
+                # Store the original requested URL in the session
+                request.session['next'] = request.path
+
+                # Redirect to 2FA verification
+                return redirect(reverse("authentication:verify_2fa"))
+
             except Exception as e:
-                print(e)
-                return redirect("/login/")
+                print(f"2FA Middleware error: {e}")
+                return redirect(reverse("admin:login"))
 
         response = self.get_response(request)
         return response
-    
